@@ -20,9 +20,16 @@ const movieGrid = document.querySelector("#movie-grid");
 const favoritesGrid = document.querySelector("#favorites-grid");
 const favoritesEmpty = document.querySelector("#favorites-empty");
 
-const yearFilter = document.querySelector("#year-filter");
-const sortFilter = document.querySelector("#sort-filter");
+const yearValue = document.querySelector("#year-value");
+const sortValue = document.querySelector("#sort-value");
+const genreValue = document.querySelector("#genre-value");
 const discoverButton = document.querySelector("#discover-button");
+
+const discoverFilters = {
+    year: "",
+    sort: "popularity.desc",
+    genre: ""
+};
 
 const homeLink = document.querySelector("#home-link");
 const discoverLink = document.querySelector("#discover-link");
@@ -377,16 +384,7 @@ async function searchMovies(keyword) {
 // ========================================
 
 async function discoverMovies() {
-
-    const year =
-        yearFilter
-            ? yearFilter.value
-            : "";
-
-    const sort =
-        sortFilter
-            ? sortFilter.value
-            : "popularity.desc";
+    const { year, sort, genre } = discoverFilters;
 
     showLoading();
 
@@ -415,6 +413,14 @@ async function discoverMovies() {
                 );
         }
 
+        // FILTER BY TMDB GENRE ID
+        if (genre) {
+            const genreId = Number(genre);
+            filteredMovies = filteredMovies.filter(movie =>
+                (movie.genre_ids || []).includes(genreId)
+            );
+        }
+
         // SORT
         filteredMovies =
             sortMovies(
@@ -427,6 +433,12 @@ async function discoverMovies() {
         ) {
 
             showBarbieError();
+
+            const errorMessage = errorState.querySelector("p");
+            if (errorMessage && genre) {
+                errorMessage.textContent =
+                    "Try choosing another genre or year.";
+            }
 
             return;
         }
@@ -1167,37 +1179,109 @@ function renderFavorites() {
 // LOAD YEARS
 // ========================================
 
-function loadYears() {
+function addDropdownOption(menu, label, value, onSelect, selected = false) {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = `dropdown-option${selected ? " selected" : ""}`;
+    option.dataset.value = value;
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", String(selected));
 
-    if (!yearFilter) {
-        return;
-    }
+    const text = document.createElement("span");
+    text.textContent = label;
+    const check = document.createElement("span");
+    check.className = "check";
+    check.textContent = "✓";
+    option.append(text, check);
 
-    const currentYear =
-        new Date().getFullYear();
+    option.addEventListener("click", () => {
+        menu.querySelectorAll(".dropdown-option").forEach(item => {
+            item.classList.remove("selected");
+            item.setAttribute("aria-selected", "false");
+        });
+        option.classList.add("selected");
+        option.setAttribute("aria-selected", "true");
+        onSelect(value, label);
+        const dropdown = menu.closest(".custom-dropdown");
+        dropdown.classList.remove("active");
+        dropdown.querySelector(".dropdown-button")
+            .setAttribute("aria-expanded", "false");
+    });
+    menu.appendChild(option);
+}
 
-    for (
-        let year = currentYear;
-        year >= 1950;
-        year--
-    ) {
+function setupDropdown(id, menuId, valueId, stateKey, items) {
+    const dropdown = document.querySelector(`#${id}`);
+    const button = dropdown?.querySelector(".dropdown-button");
+    const menu = document.querySelector(`#${menuId}`);
+    const value = document.querySelector(`#${valueId}`);
+    if (!dropdown || !button || !menu || !value) return;
 
-        const option =
-            document.createElement(
-                "option"
-            );
+    menu.replaceChildren();
+    items.forEach(item => addDropdownOption(
+        menu,
+        item.label,
+        item.value,
+        (selectedValue, label) => {
+            discoverFilters[stateKey] = selectedValue;
+            value.textContent = label;
+        },
+        item.value === discoverFilters[stateKey]
+    ));
 
-        option.value =
-            year;
+    button.addEventListener("click", () => {
+        const opening = !dropdown.classList.contains("active");
+        document.querySelectorAll(".custom-dropdown.active").forEach(open => {
+            open.classList.remove("active");
+            open.querySelector(".dropdown-button")
+                ?.setAttribute("aria-expanded", "false");
+        });
+        dropdown.classList.toggle("active", opening);
+        button.setAttribute("aria-expanded", String(opening));
+    });
+}
 
-        option.textContent =
-            year;
-
-        yearFilter.appendChild(
-            option
-        );
+async function loadGenreFilter() {
+    try {
+        const data = await fetchAPI("/genre/movie/list?language=en-US");
+        const genres = (data.genres || []).map(genre => ({
+            label: genre.name,
+            value: String(genre.id)
+        }));
+        setupDropdown("genre-dropdown", "genre-menu", "genre-value", "genre", [
+            { label: "Any Genre", value: "" },
+            ...genres
+        ]);
+    } catch (error) {
+        console.error("Could not load TMDB genres:", error);
+        const dropdown = document.querySelector("#genre-dropdown");
+        if (dropdown) dropdown.hidden = true;
     }
 }
+
+function loadDiscoverFilters() {
+    const years = [{ label: "Any Year", value: "" }];
+    for (let year = new Date().getFullYear(); year >= 1950; year--) {
+        years.push({ label: String(year), value: String(year) });
+    }
+    setupDropdown("year-dropdown", "year-menu", "year-value", "year", years);
+    setupDropdown("sort-dropdown", "sort-menu", "sort-value", "sort", [
+        { label: "Most Popular", value: "popularity.desc" },
+        { label: "Highest Rated", value: "vote_average.desc" },
+        { label: "Newest", value: "primary_release_date.desc" },
+        { label: "Oldest", value: "primary_release_date.asc" }
+    ]);
+    loadGenreFilter();
+}
+
+document.addEventListener("click", event => {
+    if (event.target.closest(".custom-dropdown")) return;
+    document.querySelectorAll(".custom-dropdown.active").forEach(dropdown => {
+        dropdown.classList.remove("active");
+        dropdown.querySelector(".dropdown-button")
+            ?.setAttribute("aria-expanded", "false");
+    });
+});
 
 // ========================================
 // DISCOVER BUTTON
@@ -1375,6 +1459,6 @@ function showError() {
 
 loadPopularMovies();
 
-loadYears();
+loadDiscoverFilters();
 
 renderFavorites();
