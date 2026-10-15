@@ -1243,11 +1243,22 @@ function setupDropdown(id, menuId, valueId, stateKey, items) {
 
 async function loadGenreFilter() {
     try {
-        const data = await fetchAPI("/genre/movie/list?language=en-US");
-        const genres = (data.genres || []).map(genre => ({
+        const [data, barbieMovies] = await Promise.all([
+            fetchAPI("/genre/movie/list?language=en-US"),
+            getBarbieMovies()
+        ]);
+
+        const barbieGenreIds = new Set(
+            barbieMovies.flatMap(movie => movie.genre_ids || [])
+        );
+
+        const genres = (data.genres || [])
+            .filter(genre => barbieGenreIds.has(genre.id))
+            .map(genre => ({
             label: genre.name,
             value: String(genre.id)
-        }));
+            }));
+
         setupDropdown("genre-dropdown", "genre-menu", "genre-value", "genre", [
             { label: "Any Genre", value: "" },
             ...genres
